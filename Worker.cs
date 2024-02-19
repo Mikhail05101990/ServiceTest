@@ -1,10 +1,15 @@
 using CloudProviders.AMPQ;
+using FileSystem.Parsers;
 
 namespace ServiceTest;
 
 public class Worker : BackgroundService
 {
-    private readonly ILogger<Worker> _logger;
+    readonly ILogger<Worker> _logger;
+    int readDocsPeriodicity = 1000;
+    string targetFolder = "Data";
+        static bool isRunning = true;
+
 
     public Worker(ILogger<Worker> logger)
     {
@@ -13,16 +18,40 @@ public class Worker : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        AMPQProvider provider = new AMPQProvider();
-        provider.SendMessage("{\"id\": 13, \"name\": \"ben\"}");
+        Console.CancelKeyPress += delegate {
+            isRunning = false;
+        };
 
-        while (!stoppingToken.IsCancellationRequested)
+        try
         {
-            if (_logger.IsEnabled(LogLevel.Information))
+            AMPQProvider provider = new ();
+            XmlParser parser = new XmlParser(targetFolder);
+            while(isRunning)
             {
-                _logger.LogInformation("Worker running at: {time}", DateTimeOffset.Now);
+                try
+                {
+                    parser.ProcessFiles();
+                }
+                catch(Exception ex)
+                {
+                    _logger.LogError($"Error on process files: {ex.Message}");
+                }
+                
+                Thread.Sleep(readDocsPeriodicity);
+
+                provider.SendMessage("{\"id\": 13, \"name\": \"ben\"}");
             }
-            await Task.Delay(1000, stoppingToken);
         }
+        catch(Exception e)
+        {
+            _logger.LogError($"Error: {e.Message}");
+        }
+    }
+
+    public override async Task StopAsync(CancellationToken cancellationToken)
+    {
+        _logger.LogInformation("Service is Stopping");
+        
+        return;
     }
 }
