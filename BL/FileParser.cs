@@ -3,11 +3,14 @@ using System.Text;
 using System.Linq;
 using System.Collections.Generic;
 using System.Threading.Tasks;
+using System.Xml;
 
 namespace FileSystem.Parsers;
 
 public class XmlParser
 {
+    static readonly string statusPropsKey = "RapidControlStatus";
+    static readonly string moduleInfoKey = "DeviceStatus";
     List<FileInfo> oldFiles;
     string _targetDirectory;
 
@@ -18,7 +21,6 @@ public class XmlParser
             _targetDirectory = targetDirectory;
             oldFiles = new();
         }
-            
         else
             throw new DirectoryNotFoundException($"{targetDirectory} not found");
     }
@@ -37,31 +39,28 @@ public class XmlParser
 
     private void HandleFile(object? obj)
     {
-        string path;
-        
-        if(obj == null)
-            throw new Exception("Empty path passed to process.");
-        else
-            path = (string)obj;
+        string path = obj == null ? throw new Exception("Empty path passed to process.") : (string)obj;
 
-        using (FileStream fs = File.OpenRead(path))
+        XmlDocument doc = new XmlDocument();
+        doc.Load(path);
+        XmlNodeList? list;
+
+        if(doc.DocumentElement != null)
         {
-            string content;
-            int iteration = 0;
-            byte[] b = new byte[4096];
-            ASCIIEncoding temp = new ASCIIEncoding();
-            int readLen;
-            
-            while ((readLen = fs.Read(b,0,b.Length)) > 0 )
+            list = doc.DocumentElement.SelectNodes($"/{moduleInfoKey}");
+
+            if(list != null)
             {
-                iteration++;
-
-                if(iteration > 1)
-                    throw new Exception($"{path} is too big.");
-
-                content = temp.GetString(b,0,readLen);
+                foreach (XmlNode item in list)
+                {
+                    XmlProps dict = XMLNodeToDictionary(item);
+                }
             }
+            else
+                throw new Exception("Invalid xml data");
         }
+        else
+            throw new Exception("Invalid xml");
     }
 
     private List<FileInfo> GetNewFiles()
@@ -74,7 +73,7 @@ public class XmlParser
             FileInfo? obj = oldFiles.FirstOrDefault(obj => obj.Path.Equals(files[i]));
             DateTime modification = File.GetLastWriteTime(files[i]);
 
-            if(obj !=null)
+            if(obj != null)
             {
                 if(obj.Modified != modification)
                 {
@@ -94,9 +93,41 @@ public class XmlParser
         return result;
     }
 
+    private XmlProps XMLNodeToDictionary(XmlNode node)
+    {
+        Dictionary<string, string> general = new();
+        Dictionary<string, string> status = new();
+        
+        if (node.HasChildNodes)
+        {
+            foreach(XmlNode child in node.ChildNodes)
+            {
+                string name = child.Name;
+                string value = child.InnerText;
+                general.Add(name, value);
+            }
+        }
+
+        string stProps = general[statusPropsKey];
+        XmlDocument doc = new XmlDocument();
+        doc.Load(stProps);
+
+        return new XmlProps()
+        {
+            GeneralProps = general,
+            StatusProps = status
+        };
+    }
+
     class FileInfo
     {
         public string Path {get;set;} = "";
         public DateTime Modified {get;set;}
+    }
+
+    class XmlProps
+    {
+        public Dictionary<string, string> GeneralProps { get; set; } = new();
+        public Dictionary<string, string> StatusProps { get; set; } = new();
     }
 }

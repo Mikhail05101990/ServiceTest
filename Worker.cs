@@ -48,7 +48,7 @@ public class Worker : BackgroundService
         }
     }
 
-    public override async Task StopAsync(CancellationToken cancellationToken)
+    public override async Task StopAsync(CancellationToken stoppingToken)
     {
         _logger.LogInformation("Service is Stopping");
         
