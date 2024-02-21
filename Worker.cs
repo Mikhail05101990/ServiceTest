@@ -5,15 +5,21 @@ namespace ServiceTest;
 
 public class Worker : BackgroundService
 {
-    readonly ILogger<Worker> _logger;
+    static bool isRunning = true;
+    ILogger<Worker> _logger;
     int readDocsPeriodicity = 1000;
-    string targetFolder = "Data";
-        static bool isRunning = true;
-
-
-    public Worker(ILogger<Worker> logger)
+    readonly IServiceProvider _serviceProvider;
+    string targetFolder = string.Join(AppDomain.CurrentDomain.BaseDirectory, "Data");
+    
+    public Worker(IServiceProvider serviceProvider)
     {
-        _logger = logger;
+        _serviceProvider = serviceProvider;
+        var wLogger = _serviceProvider.GetService(typeof(ILogger<Worker>)) as ILogger<Worker>;
+        
+        if(wLogger == null)
+            throw new Exception("Failed to instantiate logger for Worker");
+
+        _logger = wLogger;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -25,7 +31,18 @@ public class Worker : BackgroundService
         try
         {
             AMPQProvider provider = new ();
-            XmlParser parser = new XmlParser(targetFolder);
+            
+            var pLogger = _serviceProvider.GetService(typeof(ILogger<XmlParser>)) as ILogger<XmlParser>;
+            
+            if(pLogger == null)
+                throw new Exception("Failed to instantiate logger for XmlParser");
+
+            var rabbitProvider = _serviceProvider.GetService(typeof(AMPQProvider)) as AMPQProvider;
+            
+            if(rabbitProvider == null)
+                throw new Exception("Failed to instantiate rabbitMq for XmlParser");
+
+            XmlParser parser = new XmlParser(targetFolder, pLogger, rabbitProvider);
             while(isRunning)
             {
                 try

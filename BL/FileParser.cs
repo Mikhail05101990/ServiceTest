@@ -1,21 +1,23 @@
-using System.IO;
-using System.Text;
-using System.Linq;
-using System.Collections.Generic;
-using System.Threading.Tasks;
 using System.Xml;
+using CloudProviders.AMPQ;
+using ServiceTest.Dtos;
 
 namespace FileSystem.Parsers;
 
 public class XmlParser
 {
-    static readonly string statusPropsKey = "RapidControlStatus";
     static readonly string moduleInfoKey = "DeviceStatus";
+    static readonly string packageId = "PackageID";
     List<FileInfo> oldFiles;
     string _targetDirectory;
+    ILogger _logger;
+    AMPQProvider _rabbitProvider;
 
-    public XmlParser(string targetDirectory)
+    public XmlParser(string targetDirectory, ILogger logger, AMPQProvider ampqProvider)
     {
+        _logger = logger;
+        _rabbitProvider = ampqProvider;
+
         if(Directory.Exists(targetDirectory))
         {
             _targetDirectory = targetDirectory;
@@ -28,39 +30,64 @@ public class XmlParser
     public void ProcessFiles()
     {
         List<FileInfo> newFiles = GetNewFiles();
-        oldFiles = newFiles;
 
-        if(newFiles.Count < 1)
-            Console.WriteLine("No new lines.");
+        if(newFiles.Count > 0)
+            oldFiles.AddRange(newFiles);
+
+        List<Task> tasks = new List<Task>();
 
         for(int i = 0; i < newFiles.Count; i++)
-            Task.Factory.StartNew(HandleFile, newFiles[i]);
+        {
+            string path = newFiles[i].Path;
+            Task tsk = Task.Run(() => HandleFile(path));
+            tasks.Add(tsk);
+        }
+            
+        Task.WaitAll(tasks.ToArray());
     }
 
     private void HandleFile(object? obj)
     {
         string path = obj == null ? throw new Exception("Empty path passed to process.") : (string)obj;
-
+        
         XmlDocument doc = new XmlDocument();
         doc.Load(path);
-        XmlNodeList? list;
 
-        if(doc.DocumentElement != null)
+        _logger.LogInformation("Loaded xml file.");
+
+        XmlElement? root = doc.DocumentElement;
+        
+        if(root == null)
+            throw new Exception("Invaid xml document.");
+
+        XmlNode? nextNode = root.FirstChild;
+
+        if(nextNode == null)
+            throw new Exception("No elements inside xml root.");
+
+        Dictionary<string, string> generalProps = new();
+        List<XmlProps> items = new List<XmlProps>();
+
+        foreach(XmlNode child in root.ChildNodes)
         {
-            list = doc.DocumentElement.SelectNodes($"/{moduleInfoKey}");
-
-            if(list != null)
+            if(child.Name.Equals(moduleInfoKey))
             {
-                foreach (XmlNode item in list)
-                {
-                    XmlProps dict = XMLNodeToDictionary(item);
-                }
+                XmlProps props = XmlNodeToObject(child);
+                items.Add(props);
             }
             else
-                throw new Exception("Invalid xml data");
+                generalProps.Add(child.Name, child.InnerText);
         }
-        else
-            throw new Exception("Invalid xml");
+
+        _logger.LogInformation("xml processing finished.");
+
+        ModulePacket data = new ModulePacket()
+        {
+            PackageID = generalProps[packageId],
+            DeviceStatuses = items.ToArray()
+        };
+
+        _rabbitProvider.SendMessage(data);
     }
 
     private List<FileInfo> GetNewFiles()
@@ -93,41 +120,47 @@ public class XmlParser
         return result;
     }
 
-    private XmlProps XMLNodeToDictionary(XmlNode node)
+    private XmlProps XmlNodeToObject(XmlNode node)
     {
-        Dictionary<string, string> general = new();
-        Dictionary<string, string> status = new();
-        
-        if (node.HasChildNodes)
-        {
-            foreach(XmlNode child in node.ChildNodes)
-            {
-                string name = child.Name;
-                string value = child.InnerText;
-                general.Add(name, value);
-            }
-        }
-
-        string stProps = general[statusPropsKey];
-        XmlDocument doc = new XmlDocument();
-        doc.Load(stProps);
-
-        return new XmlProps()
-        {
-            GeneralProps = general,
-            StatusProps = status
+        XmlProps result = new XmlProps(){
+            InnerProps = null,
+            Props = new Dictionary<string, string>()
         };
+
+        foreach(XmlNode child in node.ChildNodes)
+            if(child.ChildNodes.Count > 1)
+                result.InnerProps = XmlNodeToObject(child);
+            else if(child.InnerText.Contains("encoding"))
+            {
+                result.InnerProps = new XmlProps();
+                XmlNodeList nodes = GetNodesFromString(child.InnerText);
+                    
+                foreach(XmlNode n in nodes)
+                    result.InnerProps.Props.Add(n.Name, n.InnerText);
+            }
+            else
+               result.Props.Add(child.Name, child.InnerText);  
+
+        return result;
+    }
+
+    private XmlNodeList GetNodesFromString(string text)
+    {
+        XmlDocument doc = new XmlDocument();
+        doc.LoadXml(text);
+        XmlElement? root = doc.DocumentElement;
+        
+        if(root == null)
+            throw new Exception("Invaid xml document.");
+        
+        XmlNodeList list = root.ChildNodes;
+
+        return list;
     }
 
     class FileInfo
     {
         public string Path {get;set;} = "";
         public DateTime Modified {get;set;}
-    }
-
-    class XmlProps
-    {
-        public Dictionary<string, string> GeneralProps { get; set; } = new();
-        public Dictionary<string, string> StatusProps { get; set; } = new();
     }
 }
