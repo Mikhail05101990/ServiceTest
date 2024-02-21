@@ -55,8 +55,6 @@ public class Worker : BackgroundService
                 }
                 
                 Thread.Sleep(readDocsPeriodicity);
-
-                provider.SendMessage("{\"id\": 13, \"name\": \"ben\"}");
             }
         }
         catch(Exception e)
@@ -67,7 +65,7 @@ public class Worker : BackgroundService
 
     public override async Task StopAsync(CancellationToken stoppingToken)
     {
-        _logger.LogInformation("Service is Stopping");
+        _logger.LogInformation("Parsing service is stopping");
         
         return;
     }

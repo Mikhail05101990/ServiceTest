@@ -1,7 +1,10 @@
+using RemoteProviders;
+
 namespace ReceiverService;
 
 public class Worker : BackgroundService
 {
+    static bool isRunning = true;
     private readonly ILogger<Worker> _logger;
 
     public Worker(ILogger<Worker> logger)
@@ -11,13 +14,23 @@ public class Worker : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        while (!stoppingToken.IsCancellationRequested)
+        Console.CancelKeyPress += delegate {
+            isRunning = false;
+        };
+
+        RabbitMQSubscriber subscriber = new RabbitMQSubscriber();
+
+        while (isRunning && !stoppingToken.IsCancellationRequested)
         {
-            if (_logger.IsEnabled(LogLevel.Information))
-            {
-                _logger.LogInformation("Worker running at: {time}", DateTimeOffset.Now);
-            }
-            await Task.Delay(1000, stoppingToken);
+            subscriber.ConsumeQueue();
+            Thread.Sleep(1000);
         }
+    }
+
+    public override async Task StopAsync(CancellationToken stoppingToken)
+    {
+        _logger.LogInformation("Listener service is stopping");
+        
+        return;
     }
 }
