@@ -14,14 +14,13 @@ public class StatusContext : DbContext
 
     public StatusContext()
     {
-        var path = "DB";
-        DbPath = System.IO.Path.Join(path, "stat.db");
+        DbPath = System.IO.Path.Join(AppDomain.CurrentDomain.BaseDirectory, "DB", "stat.db");
         Database.EnsureCreated();
     }
 
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
     {
-        optionsBuilder.UseSqlite($"Data Source=/home/misha/Документы/ServiceTest/ReceiverService/bin/Debug/net8.0/DB/stat.db;");
+        optionsBuilder.UseSqlite($"Data Source={DbPath};");
     }
 }
 

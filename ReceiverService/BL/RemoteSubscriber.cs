@@ -11,16 +11,16 @@ namespace RemoteProviders;
 
 public class RabbitMQSubscriber
 {
-    static readonly string url = "amqps://xsycrzfm:VWTUP14de_hoxi_TJkoZWCOaq7Qi56og@beaver.rmq.cloudamqp.com/xsycrzfm";
-    static readonly string queueName = "QueueTest";
+    readonly WorkerOptions _options;
     private IConnection? _connection;
     private IModel? _channel;
     private ManualResetEvent _resetEvent = new ManualResetEvent(false);
     private readonly StatusContext _db;
 
-    public RabbitMQSubscriber(StatusContext db)
+    public RabbitMQSubscriber(StatusContext db, WorkerOptions options)
     {
         _db = db;
+        _options = options;
     }
     
     public void ConsumeQueue()
@@ -31,12 +31,12 @@ public class RabbitMQSubscriber
         
         var factory = new ConnectionFactory
         {
-            Uri = new Uri(url)
+            Uri = new Uri(_options.url)
         };
 
         _connection = factory.CreateConnection();
         _channel = _connection.CreateModel();
-        _channel.QueueDeclare(queueName, durable, exclusive, autoDelete, null);
+        _channel.QueueDeclare(_options.queueName, durable, exclusive, autoDelete, null);
 
         var consumer = new EventingBasicConsumer(_channel);
         consumer.Received += (model, deliveryEventArgs) =>
@@ -54,7 +54,7 @@ public class RabbitMQSubscriber
             _channel.BasicAck(deliveryEventArgs.DeliveryTag, false);
         };
 
-        _ = _channel.BasicConsume(consumer, queueName);
+        _ = _channel.BasicConsume(consumer, _options.queueName);
         _resetEvent.WaitOne();
         _channel?.Close();
         _channel = null;
@@ -71,7 +71,7 @@ public class RabbitMQSubscriber
             var res = _db.ModuleStatistics.FirstOrDefault(m => m.ModuleCategoryID == id);
             
             if(res == null)
-                _db.Add(new ModuleStatistics(){ ModuleCategoryID = id, ModuleState = st});
+                _db.ModuleStatistics.Add(new ModuleStatistics(){ ModuleCategoryID = id, ModuleState = st});
             else
                 res.ModuleState = st;
 
@@ -95,7 +95,7 @@ public class RabbitMQSubscriber
         int perc = Convert.ToInt32(onlineCount/generalCount*100);
         
         if(res == null)
-                _db.Add(new PacketStatistics(){ PacketID = data.PackageID, AvailabilityPercent = perc});
+                _db.PacketStatistics.Add(new PacketStatistics(){ PacketID = data.PackageID, AvailabilityPercent = perc});
             else
                 res.AvailabilityPercent = perc;
         
