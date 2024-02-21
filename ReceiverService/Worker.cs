@@ -1,3 +1,4 @@
+using DbProviders;
 using RemoteProviders;
 
 namespace ReceiverService;
@@ -14,11 +15,13 @@ public class Worker : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        using var db = new StatusContext();
+        
         Console.CancelKeyPress += delegate {
             isRunning = false;
         };
 
-        RabbitMQSubscriber subscriber = new RabbitMQSubscriber();
+        RabbitMQSubscriber subscriber = new RabbitMQSubscriber(db);
 
         while (isRunning && !stoppingToken.IsCancellationRequested)
         {
